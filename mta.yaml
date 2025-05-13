@@ -1,0 +1,164 @@
+_schema-version: 3.3.0
+ID: test_prj
+description: A simple CAP project.
+version: 1.0.0
+modules:
+- name: test_prj-srv
+  type: nodejs
+  path: gen/srv
+  requires:
+  - name: test_prj-auth
+  - name: test_prj-db
+  provides:
+  - name: srv-api
+    properties:
+      srv-url: ${default-url}
+  parameters:
+    buildpack: nodejs_buildpack
+    instances: 1
+  build-parameters:
+    builder: npm-ci
+- name: test_prj-db-deployer
+  type: hdb
+  path: gen/db
+  requires:
+  - name: test_prj-db
+  parameters:
+    buildpack: nodejs_buildpack
+- name: test_prj-destination-content
+  type: com.sap.application.content
+  requires:
+  - name: test_prj-destination-service
+    parameters:
+      content-target: true
+  - name: test_prj_html_repo_host
+    parameters:
+      service-key:
+        name: test_prj_html_repo_host-key
+  - name: test_prj-auth
+    parameters:
+      service-key:
+        name: test_prj-auth-key
+  parameters:
+    content:
+      instance:
+        destinations:
+        - Name: appRouterconfig_test_prj_html_repo_host
+          ServiceInstanceName: test_prj-html5-app-host-service
+          ServiceKeyName: test_prj_html_repo_host-key
+          sap.cloud.service: appRouterconfig
+        - Authentication: OAuth2UserTokenExchange
+          Name: appRouterconfig_test_prj_auth
+          ServiceInstanceName: test_prj-auth
+          ServiceKeyName: test_prj-auth-key
+          sap.cloud.service: appRouterconfig
+        existing_destinations_policy: ignore
+  build-parameters:
+    no-source: true
+- name: test_prj
+  type: approuter.nodejs
+  path: app/router
+  requires:
+  - name: srv-api
+    group: destinations
+    properties:
+      forwardAuthToken: true
+      name: srv-api
+      url: ~{srv-url}
+  - name: test_prj-auth
+  - name: test_prj-destination-service
+    group: destinations
+    properties:
+      forwardAuthToken: false
+      name: ui5
+      url: https://ui5.sap.com
+  provides:
+  - name: app-api
+    properties:
+      app-protocol: ${protocol}
+      app-uri: ${default-uri}
+  parameters:
+    disk-quota: 256M
+    keep-existing-routes: true
+    memory: 256M
+- name: test_prj-app-content
+  type: com.sap.application.content
+  path: .
+  requires:
+  - name: test_prj_html_repo_host
+    parameters:
+      content-target: true
+  build-parameters:
+    build-result: resources
+    requires:
+    - artifacts:
+      - supplier.zip
+      name: supplier
+      target-path: resources/
+- name: supplier
+  type: html5
+  path: app/supplier
+  build-parameters:
+    build-result: dist
+    builder: custom
+    commands:
+    - npm install
+    - npm run build:cf
+    supported-platforms: []
+resources:
+- name: test_prj-auth
+  type: org.cloudfoundry.managed-service
+  parameters:
+    config:
+      tenant-mode: dedicated
+      xsappname: test_prj-${org}-${space}
+    path: ./xs-security.json
+    service: xsuaa
+    service-plan: application
+- name: test_prj-db
+  type: com.sap.xs.hdi-container
+  parameters:
+    service: hana
+    service-plan: hdi-shared
+- name: test_prj-destination-service
+  type: org.cloudfoundry.managed-service
+  parameters:
+    config:
+      HTML5Runtime_enabled: true
+      init_data:
+        instance:
+          destinations:
+          - Authentication: NoAuthentication
+            Name: ui5
+            ProxyType: Internet
+            Type: HTTP
+            URL: https://ui5.sap.com
+          - Authentication: NoAuthentication
+            HTML5.DynamicDestination: true
+            HTML5.ForwardAuthToken: true
+            Name: test_prj-srv-api
+            ProxyType: Internet
+            Type: HTTP
+            URL: ~{srv-api/srv-url}
+          existing_destinations_policy: update
+      version: 1.0.0
+    service: destination
+    service-name: test_prj-destination-service
+    service-plan: lite
+  requires:
+  - name: srv-api
+- name: test_prj_html_repo_host
+  type: org.cloudfoundry.managed-service
+  parameters:
+    service: html5-apps-repo
+    service-name: test_prj-html5-app-host-service
+    service-plan: app-host
+parameters:
+  deploy_mode: html5-repo
+  enable-parallel-deployments: true
+build-parameters:
+  before-all:
+  - builder: custom
+    commands:
+    - npm ci
+    - npx cds build --production

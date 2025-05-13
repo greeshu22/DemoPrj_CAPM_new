@@ -1,0 +1,12 @@
+get http://localhost:4004/odata/v4/supplier/Suppliers
+
+###
+POST http://localhost:4004/odata/v4/supplier/Suppliers
+Content-Type: application/json
+
+{
+"ID": "1c715ed6-9767-4dac-8205-198d59e69654",
+      "city": "gujart",
+      "name": "sum",
+      "phone": "56738712947"
+}
